@@ -5,9 +5,6 @@ import io
 from datetime import datetime
 import matplotlib.pyplot as plt
 import seaborn as sns
-from fpdf import FPDF
-import msoffcrypto
-import tempfile
 
 # ---------- CONFIG ----------
 ACTIVE_SHEET = "Active"
@@ -19,41 +16,30 @@ PROJECTS = ["Afghan response", "Flood response", "Flow Monitoring", "PMS", "EMS"
 os.makedirs(PROFILE_IMG_DIR, exist_ok=True)
 
 # ---------- LOGIN ----------
+USERNAME = "admin"
+PASSWORD = "12345678"
+
 def login():
     st.title("🔐 Login")
     if "password_verified" not in st.session_state:
         st.session_state.password_verified = False
 
-    password = st.text_input("Enter Excel Password", type="password")
-    if st.button("Unlock"):
-        try:
-            # Try to unlock the Excel file
-            with open(EXCEL_FILE, "rb") as file:
-                office_file = msoffcrypto.OfficeFile(file)
-                office_file.load_key(password=password)
-                decrypted = io.BytesIO()
-                office_file.decrypt(decrypted)
+    username = st.text_input("Username")
+    password = st.text_input("Password", type="password")
 
-            # If decryption is successful, save password in session
-            st.session_state.password = password
+    if st.button("Login"):
+        if username == USERNAME and password == PASSWORD:
             st.session_state.password_verified = True
+            st.session_state.username = username
             st.success("✅ Login successful. Loading app...")
             st.rerun()
-
-        except Exception as e:
-            st.error(f"❌ Incorrect password or error unlocking file: {e}")
+        else:
+            st.error("❌ Incorrect username or password")
 
 # ---------- UTILS ----------
 def load_data():
-    password = st.session_state.get("password", "")
     try:
-        with open(EXCEL_FILE, "rb") as file:
-            office_file = msoffcrypto.OfficeFile(file)
-            office_file.load_key(password=password)
-            decrypted = io.BytesIO()
-            office_file.decrypt(decrypted)
-
-        xls = pd.ExcelFile(decrypted)
+        xls = pd.ExcelFile(EXCEL_FILE)
         active_df = pd.read_excel(xls, ACTIVE_SHEET)
         resigned_df = pd.read_excel(xls, RESIGNED_SHEET)
 
@@ -72,7 +58,6 @@ def load_data():
             if "Profile_Image" not in df.columns:
                 df["Profile_Image"] = ""
 
-        st.toast("✅ Data loaded successfully.")
         return active_df, resigned_df
 
     except Exception as e:
@@ -80,35 +65,30 @@ def load_data():
         return pd.DataFrame(), pd.DataFrame()
 
 def save_data(active_df, resigned_df):
-    password = st.session_state.get("password", "")
-
-    # Save decrypted Excel to BytesIO
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine='openpyxl', mode='w') as writer:
+    with pd.ExcelWriter(EXCEL_FILE, engine='openpyxl', mode='w') as writer:
         active_df.to_excel(writer, sheet_name=ACTIVE_SHEET, index=False)
         resigned_df.to_excel(writer, sheet_name=RESIGNED_SHEET, index=False)
-    output.seek(0)
-
-    # Re-encrypt the file
-    temp_file = tempfile.NamedTemporaryFile(delete=False)
-    temp_file.write(output.read())
-    temp_file.close()
-
-    # Re-encrypt using msoffcrypto
-    with open(temp_file.name, "rb") as f_in, open(EXCEL_FILE, "wb") as f_out:
-        office_file = msoffcrypto.OfficeFile(f_in)
-        office_file.encrypt(password=password)
-        office_file.write(f_out)
-
-    os.remove(temp_file.name)
 
 # ---------- APP ----------
 if "password_verified" not in st.session_state or not st.session_state.password_verified:
     login()
     st.stop()
 
+# ---------- PAGE CONFIG ----------
+st.set_page_config(page_title="HR Dashboard", layout="wide")
 
-# --- Your original full app code should be pasted here ---
+# Add a logout button to the sidebar
+with st.sidebar:
+    if st.button("🔓 Logout"):
+        st.session_state.clear()
+        st.rerun()
+
+# ---------- REST OF YOUR APP ----------
+# (Paste your complete app code from "# ---------- MENU ----------" onwards here)
+
+# Example of loading data and showing the dashboard tab
+active_df, resigned_df = load_data()
+
 
 
 # ---------- PAGE CONFIG ----------
@@ -675,19 +655,11 @@ elif menu == "🚫 Inactive Staff":
             active_df = pd.concat([active_df, reactivated], ignore_index=True)
             save_data(active_df, resigned_df)
             st.success("Staff successfully reactivated and moved to Active list.")
-# 🗖️ Attendance Tab for Streamlit HR App
-elif menu == "🗖️ Attendance":
-    st.header("🗖️ Attendance Tab")
+elif menu == "📆 Attendance":
+    st.header("📆 Attendance Tab")
 
-    import io
     import openpyxl
-    import zipfile
-    import tempfile
-    import pandas as pd
     from openpyxl.styles import Alignment
-    from datetime import datetime
-    import os
-    import platform
 
     def generate_attendance_df(start_date, end_date, in_time, out_time):
         dates = pd.date_range(start=start_date, end=end_date)
@@ -710,53 +682,14 @@ elif menu == "🗖️ Attendance":
         if not isinstance(cell, openpyxl.cell.cell.MergedCell):
             cell.value = value
 
-    def convert_excel_to_pdf(excel_bytes, filename="temp.pdf"):
-        if platform.system() != "Windows":
-            st.warning("PDF conversion is only available on Windows. Please download Excel instead.")
-            return None
-
-        try:
-            import pythoncom
-            import win32com.client
-
-            pythoncom.CoInitialize()
-
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp_excel:
-                tmp_excel.write(excel_bytes.getvalue())
-                tmp_excel_path = tmp_excel.name
-
-            pdf_output = os.path.splitext(tmp_excel_path)[0] + ".pdf"
-
-            excel_app = win32com.client.Dispatch("Excel.Application")
-            excel_app.Visible = False
-            wb = excel_app.Workbooks.Open(tmp_excel_path)
-            wb.ExportAsFixedFormat(0, pdf_output)
-            wb.Close(False)
-            excel_app.Quit()
-
-            with open(pdf_output, "rb") as f:
-                pdf_data = f.read()
-
-            os.remove(tmp_excel_path)
-            os.remove(pdf_output)
-
-            return pdf_data
-        except Exception as e:
-            st.error(f"PDF conversion failed: {e}")
-            return None
-
     st.subheader("📄 Single Staff Attendance")
-    if 'active_df' in globals():
-        search_by = st.radio("Search Staff By", ["CNIC", "PERN"], horizontal=True)
-        if search_by == "CNIC":
-            value = st.selectbox("Select CNIC", active_df['CNIC_No'].astype(str).unique())
-            staff_row = active_df[active_df['CNIC_No'].astype(str) == value].iloc[0]
-        else:
-            value = st.selectbox("Select PERN (Emp Code)", active_df['Emp_Code'].astype(str).unique())
-            staff_row = active_df[active_df['Emp_Code'].astype(str) == value].iloc[0]
+    search_by = st.radio("Search Staff By", ["CNIC", "PERN"], horizontal=True)
+    if search_by == "CNIC":
+        value = st.selectbox("Select CNIC", active_df['CNIC_No'].astype(str).unique())
+        staff_row = active_df[active_df['CNIC_No'].astype(str) == value].iloc[0]
     else:
-        st.error("Active staff data not loaded.")
-        st.stop()
+        value = st.selectbox("Select PERN (Emp Code)", active_df['Emp_Code'].astype(str).unique())
+        staff_row = active_df[active_df['Emp_Code'].astype(str) == value].iloc[0]
 
     col1, col2 = st.columns(2)
     with col1:
@@ -809,12 +742,11 @@ elif menu == "🗖️ Attendance":
             excel_output = io.BytesIO()
             wb.save(excel_output)
             excel_output.seek(0)
+
             filename = f"Attendance_{staff_row['Full_Name'].replace(' ', '_')}_{start_date.strftime('%Y%m%d')}_{end_date.strftime('%Y%m%d')}"
-
-            st.download_button("📄 Download Excel", data=excel_output.getvalue(), file_name=f"{filename}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-
-            if platform.system() == "Windows":
-                if st.button("📄 Generate PDF"):
-                    pdf_bytes = convert_excel_to_pdf(excel_output)
-                    if pdf_bytes:
-                        st.download_button("📄 Download PDF", data=pdf_bytes, file_name=f"{filename}.pdf", mime="application/pdf")
+            st.download_button(
+                "📄 Download Excel",
+                data=excel_output.getvalue(),
+                file_name=f"{filename}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
