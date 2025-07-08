@@ -1,0 +1,9 @@
+streamlit
+pandas
+openpyxl
+matplotlib
+seaborn
+fpdf
+PyMuPDF
+reportlab
+xlsxwriter
