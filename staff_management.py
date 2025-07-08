@@ -14,27 +14,27 @@ PROFILE_IMG_DIR = "profile_images"
 PROJECTS = ["Afghan response", "Flood response", "Flow Monitoring", "PMS", "EMS"]
 
 os.makedirs(PROFILE_IMG_DIR, exist_ok=True)
-
 # ---------- LOGIN ----------
-USERNAME = "admin"
-PASSWORD = "12345678"
+USERNAME = st.secrets["login"]["username"]
+PASSWORD = st.secrets["login"]["password"]
 
 def login():
     st.title("🔐 Login")
     if "password_verified" not in st.session_state:
         st.session_state.password_verified = False
 
-    username = st.text_input("Username")
-    password = st.text_input("Password", type="password")
+    username_input = st.text_input("Username")
+    password_input = st.text_input("Password", type="password")
 
-    if st.button("Login"):
-        if username == USERNAME and password == PASSWORD:
+    if st.button("Unlock"):
+        # Check against secrets
+        if username_input == st.secrets["login"]["username"] and password_input == st.secrets["login"]["password"]:
             st.session_state.password_verified = True
-            st.session_state.username = username
             st.success("✅ Login successful. Loading app...")
             st.rerun()
         else:
-            st.error("❌ Incorrect username or password")
+            st.error("❌ Incorrect username or password.")
+
 
 # ---------- UTILS ----------
 def load_data():
