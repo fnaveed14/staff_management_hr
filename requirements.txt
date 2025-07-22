@@ -1,8 +1,7 @@
-mapping of settlements
-overlay the flood extent map
-only go to the targeted areas
-
-dots on the map
-active/selected from PDMA
-high medium low. cloropath.
-elevation and river on the map
+streamlit
+pandas
+openpyxl
+xlsxwriter
+matplotlib
+seaborn
+Pillow
