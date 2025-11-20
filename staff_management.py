@@ -449,34 +449,102 @@ elif menu == "✏️ Edit Employee":
 elif menu == "📤 Close Contract":
     st.header("📤 Close Contract")
 
+    # =======================
+    #     🔍 FILTERS
+    # =======================
+    st.subheader("Filters")
+    f1, f2, f3 = st.columns(3)
+    name_filter = f1.text_input("Search by Name")
+    emp_filter = f2.text_input("Search by Employee Code (PERN)")
+    dummy = f3.markdown("<br>", unsafe_allow_html=True)  # maintain layout
+
+    f4, f5, f6 = st.columns(3)
+    province_filter = f4.selectbox("Province", ["All"] + sorted(active_df['Province'].dropna().astype(str).unique()))
+    district_filter = f5.selectbox("District (Duty Station)", ["All"] + sorted(active_df['District - Duty Station'].dropna().astype(str).unique()))
+    designation_filter = f6.selectbox("Designation", ["All"] + sorted(active_df['Designation'].dropna().astype(str).unique()))
+
+    # Apply filters
+    filtered_active = active_df.copy()
+
+    if name_filter:
+        filtered_active = filtered_active[filtered_active['Full_Name'].str.contains(name_filter, case=False, na=False)]
+    if emp_filter:
+        filtered_active = filtered_active[filtered_active['Emp_Code'].astype(str).str.contains(emp_filter, na=False)]
+    if province_filter != "All":
+        filtered_active = filtered_active[filtered_active['Province'].astype(str) == province_filter]
+    if district_filter != "All":
+        filtered_active = filtered_active[filtered_active['District - Duty Station'].astype(str) == district_filter]
+    if designation_filter != "All":
+        filtered_active = filtered_active[filtered_active['Designation'].astype(str) == designation_filter]
+
+    st.write(f"🔎 **Filtered Staff Count:** {len(filtered_active)}")
+
+    # =======================
+    #     SINGLE CLOSE
+    # =======================
     st.subheader("Single Staff Close")
-    single_cnic = st.selectbox("Select CNIC to Close Contract", active_df['CNIC_No'].astype(str).unique(), key="close_single")
-    if st.button("Close Contract", key="close_button"):
-        closing_record = active_df[active_df['CNIC_No'].astype(str) == single_cnic].copy()
-        if not closing_record.empty:
-            active_df = active_df[active_df['CNIC_No'].astype(str) != single_cnic]
-            resigned_df = pd.concat([resigned_df, closing_record], ignore_index=True)
-            save_data(active_df, resigned_df)
-            st.success("Contract closed and record moved to Resigned list.")
-        else:
-            st.warning("CNIC not found in active records.")
+
+    if filtered_active.empty:
+        st.warning("No staff match your filters.")
+    else:
+        single_cnic = st.selectbox("Select CNIC to Close Contract", filtered_active['CNIC_No'].astype(str).unique(), key="close_single")
+        remarks_input = st.text_area("📝 Reason for Closing Contract (Remarks)", placeholder="Example: Contract ended, poor performance, disciplinary issue, resignation, etc.")
+
+        if st.button("Close Contract", key="close_button"):
+            closing_record = active_df[active_df['CNIC_No'].astype(str) == single_cnic].copy()
+
+            if not closing_record.empty:
+                active_df = active_df[active_df['CNIC_No'].astype(str) != single_cnic]
+
+                # Add Remarks
+                closing_record["Remarks"] = remarks_input if remarks_input.strip() != "" else "No remarks provided"
+
+                resigned_df = pd.concat([resigned_df, closing_record], ignore_index=True)
+                save_data(active_df, resigned_df)
+                st.success("Contract closed and staff moved to Inactive list.")
+            else:
+                st.warning("CNIC not found in active records.")
 
     st.markdown("---")
+
+    # =======================
+    #     BULK CLOSE
+    # =======================
     st.subheader("📥 Bulk Close Contracts")
 
-    sample_bulk = pd.DataFrame({"CNIC_No": ["1234567890123", "9876543210123"]})
-    sample_buffer = io.BytesIO()
-    with pd.ExcelWriter(sample_buffer, engine='xlsxwriter') as writer:
-        sample_bulk.to_excel(writer, index=False, sheet_name='To_Close')
-    st.download_button("📄 Download Bulk Close Template", data=sample_buffer.getvalue(), file_name="bulk_close_template.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    sample_bulk = pd.DataFrame({
+        "CNIC_No": ["1234567890123", "9876543210123"],
+        "Remarks": ["Contract Ended", "Performance Issue"]
+    })
+
+    buffer = io.BytesIO()
+    with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
+        sample_bulk.to_excel(writer, index=False, sheet_name="To_Close")
+
+    st.download_button(
+        "📄 Download Bulk Close Template",
+        data=buffer.getvalue(),
+        file_name="bulk_close_template.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
 
     uploaded_file = st.file_uploader("Upload Filled Template for Bulk Contract Closure", type=["xlsx"], key="bulk_close_upload")
+
     if uploaded_file:
         try:
             df_bulk = pd.read_excel(uploaded_file)
+
+            if "Remarks" not in df_bulk.columns:
+                df_bulk["Remarks"] = "No remarks provided"
+
             cnic_list = df_bulk['CNIC_No'].astype(str).tolist()
+
             to_close = active_df[active_df['CNIC_No'].astype(str).isin(cnic_list)].copy()
+
             if not to_close.empty:
+                # Merge Remarks from uploaded file
+                to_close = to_close.merge(df_bulk[['CNIC_No', 'Remarks']], on="CNIC_No", how="left")
+
                 active_df = active_df[~active_df['CNIC_No'].astype(str).isin(cnic_list)]
                 resigned_df = pd.concat([resigned_df, to_close], ignore_index=True)
                 save_data(active_df, resigned_df)
@@ -485,10 +553,15 @@ elif menu == "📤 Close Contract":
                 st.warning("No matching CNICs found in active staff.")
         except Exception as e:
             st.error(f"Error processing file: {e}")
+
+
 # ---------- ADD / IMPORT STAFF ----------
 elif menu == "➕ Add Staff":
     st.header("➕ Add or Import Staff")
 
+    # ------------------------------------------------------
+    #                🔹 SINGLE ENTRY FORM
+    # ------------------------------------------------------
     st.subheader("Single Entry")
     with st.form("add_staff_form", clear_on_submit=True):
         c1, c2 = st.columns(2)
@@ -510,13 +583,37 @@ elif menu == "➕ Add Staff":
 
         st.markdown("### ✅ Active Projects")
         active_projects = {proj: st.checkbox(proj) for proj in PROJECTS}
+
         submit_btn = st.form_submit_button("Add Staff")
 
         if submit_btn:
+            cnic_str = str(cnic).strip()
+
+            # 🔍 1. Check CNIC in inactive staff
+            if cnic_str in resigned_df['CNIC_No'].astype(str).values:
+                record = resigned_df[resigned_df['CNIC_No'].astype(str) == cnic_str].iloc[0]
+                remarks_text = record.get("Remarks", "No remarks")
+
+                st.error(
+                    f"""
+                    🚫 **This CNIC belongs to an inactive employee and cannot be added again.**
+
+                    **Name:** {record.get('Full_Name', 'Unknown')}  
+                    **Reason (Remarks):** `{remarks_text}`
+                    """
+                )
+                st.stop()
+
+            # 🔍 2. Check CNIC in active staff
+            if cnic_str in active_df['CNIC_No'].astype(str).values:
+                st.error("⚠️ This CNIC already exists in the Active Staff list. Cannot add duplicate.")
+                st.stop()
+
+            # 3️⃣ If safe → allow adding
             new_row = {
                 "Emp_Code": emp_code,
                 "Full_Name": full_name,
-                "CNIC_No": cnic,
+                "CNIC_No": cnic_str,
                 "Mobile Number": mobile,
                 "Email Adresss": email,
                 "DOB": dob,
@@ -536,9 +633,13 @@ elif menu == "➕ Add Staff":
             save_data(active_df, resigned_df)
             st.success("Staff added successfully.")
 
+    # ------------------------------------------------------
+    #                🔹 BULK IMPORT
+    # ------------------------------------------------------
     st.markdown("---")
     st.subheader("📥 Bulk Import")
 
+    # Sample template
     sample_bulk = pd.DataFrame({
         "Emp_Code": ["EMP001"],
         "Full_Name": ["Ali Khan"],
@@ -560,22 +661,67 @@ elif menu == "➕ Add Staff":
     buffer = io.BytesIO()
     with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
         sample_bulk.to_excel(writer, index=False, sheet_name="Staff")
-    st.download_button("📄 Download Import Template", data=buffer.getvalue(), file_name="staff_import_template.xlsx")
+
+    st.download_button(
+        "📄 Download Import Template",
+        data=buffer.getvalue(),
+        file_name="staff_import_template.xlsx"
+    )
 
     uploaded_file = st.file_uploader("Upload Filled Template", type=["xlsx"], key="staff_import")
+
     if uploaded_file:
         try:
             import_df = pd.read_excel(uploaded_file)
+
+            # Ensure project columns exist
             for proj in PROJECTS:
                 if proj not in import_df.columns:
                     import_df[proj] = False
+
+            # Make sure Profile_Image column exists
             if "Profile_Image" not in import_df.columns:
                 import_df["Profile_Image"] = ""
-            active_df = pd.concat([active_df, import_df], ignore_index=True)
-            save_data(active_df, resigned_df)
-            st.success(f"Imported {len(import_df)} new staff.")
+
+            # --------- NEW VALIDATION FOR BULK IMPORT ---------
+            inactive_cnic_list = resigned_df['CNIC_No'].astype(str).tolist()
+            active_cnic_list = active_df['CNIC_No'].astype(str).tolist()
+
+            skip_rows = []
+            valid_rows = []
+
+            for _, row in import_df.iterrows():
+                cnic_str = str(row["CNIC_No"]).strip()
+
+                # Check in inactive staff
+                if cnic_str in inactive_cnic_list:
+                    remarks = resigned_df[resigned_df["CNIC_No"].astype(str) == cnic_str]["Remarks"].iloc[0]
+                    skip_rows.append((cnic_str, row.get("Full_Name", "Unknown"), remarks))
+                    continue
+
+                # Check in active staff
+                if cnic_str in active_cnic_list:
+                    skip_rows.append((cnic_str, row.get("Full_Name", "Unknown"), "Already Active"))
+                    continue
+
+                valid_rows.append(row)
+
+            if skip_rows:
+                st.warning("⚠️ Some rows were skipped:\n")
+                for cnic_val, name_val, reason in skip_rows:
+                    st.write(f"- **{name_val}** ({cnic_val}) → `{reason}`")
+
+            if valid_rows:
+                valid_df = pd.DataFrame(valid_rows)
+                active_df = pd.concat([active_df, valid_df], ignore_index=True)
+                save_data(active_df, resigned_df)
+                st.success(f"Imported {len(valid_rows)} new staff.")
+            else:
+                st.error("🚫 No valid rows found for import. Nothing was added.")
+
         except Exception as e:
             st.error(f"Error importing data: {e}")
+
 # ---------- DELETE STAFF ----------
 elif menu == "❌ Delete Staff":
     st.header("🗑️ Delete Staff")
