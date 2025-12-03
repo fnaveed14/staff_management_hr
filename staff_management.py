@@ -11,7 +11,17 @@ ACTIVE_SHEET = "Active"
 RESIGNED_SHEET = "Resigned-Contract End"
 EXCEL_FILE = "staff_data.xlsx"
 PROFILE_IMG_DIR = "profile_images"
-PROJECTS = ["Afghan response", "Flood response", "Flow Monitoring", "PMS", "EMS"]
+PROJECTS = [
+    "Afghan response",
+    "Flood response",
+    "Flow Monitoring",
+    "PMS",
+    "CVA",
+    "FCDO",
+    "MIS",
+    "Call Center"
+]
+
 
 os.makedirs(PROFILE_IMG_DIR, exist_ok=True)
 # ---------- LOGIN ----------
@@ -394,9 +404,13 @@ elif menu == "✏️ Edit Employee":
                 profile_img = st.file_uploader("Upload Profile Image", type=["png", "jpg", "jpeg"])
 
             st.markdown("### ✅ Active Projects")
-            active_projects = {}
-            for proj in PROJECTS:
-                active_projects[proj] = st.checkbox(proj, value=bool(emp.get(proj, False)))
+
+            selected_projects = st.multiselect(
+                "Select Active Projects",
+                PROJECTS,
+                default=[proj for proj in PROJECTS if emp.get(proj, False)]
+            )
+
 
             remarks = st.text_area("Remarks", emp.get("Remarks", ""))
 
@@ -428,7 +442,7 @@ elif menu == "✏️ Edit Employee":
                 active_df.at[idx, 'Remarks'] = remarks
 
                 for proj in PROJECTS:
-                    active_df.at[idx, proj] = active_projects[proj]
+                    active_df.at[idx, proj] = (proj in selected_projects)
 
                 if profile_img:
                     img_path = os.path.join(PROFILE_IMG_DIR, f"{edit_cnic}.png")
@@ -582,7 +596,12 @@ elif menu == "➕ Add Staff":
             contract_end = st.date_input("Contract End Date")
 
         st.markdown("### ✅ Active Projects")
-        active_projects = {proj: st.checkbox(proj) for proj in PROJECTS}
+
+        selected_projects = st.multiselect(
+            "Select Active Projects",
+            PROJECTS
+)
+
 
         submit_btn = st.form_submit_button("Add Staff")
 
@@ -627,7 +646,7 @@ elif menu == "➕ Add Staff":
                 "Profile_Image": ""
             }
             for proj in PROJECTS:
-                new_row[proj] = active_projects[proj]
+                new_row[proj] = (proj in selected_projects)
 
             active_df = pd.concat([active_df, pd.DataFrame([new_row])], ignore_index=True)
             save_data(active_df, resigned_df)
