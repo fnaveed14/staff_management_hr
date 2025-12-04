@@ -160,96 +160,218 @@ menu = st.session_state.menu
 active_df, resigned_df = load_data()
 
 if menu == "🏠 Dashboard":
+
     st.title("📊 HR Dashboard Overview")
 
-    # ───── KPI Cards ─────
-    total_active = len(active_df)
-    total_resigned = len(resigned_df)
+    # =====================================================
+    #                   🔍 DASHBOARD FILTERS
+    # =====================================================
+    st.subheader("🔎 Filters")
+
+    f1, f2, f3 = st.columns(3)
+
+    # Project Type Filter (Daily Wager / Emergency Project)
+    project_type_filter = f1.selectbox(
+        "Project Type",
+        ["All"] + sorted(active_df['Project'].dropna().astype(str).unique())
+    )
+
+    province_filter = f2.selectbox(
+        "Province",
+        ["All"] + sorted(active_df['Province'].dropna().astype(str).unique())
+    )
+
+    district_filter = f3.selectbox(
+        "District (Duty Station)",
+        ["All"] + sorted(active_df['District - Duty Station'].dropna().astype(str).unique())
+    )
+
+    # Active Projects Multi-select
+    active_project_filter = st.multiselect(
+        "Active Projects",
+        PROJECTS
+    )
+
+    # =====================================================
+    #                 APPLY FILTERS TO DATA
+    # =====================================================
+    filtered_df = active_df.copy()
+
+    if project_type_filter != "All":
+        filtered_df = filtered_df[filtered_df['Project'].astype(str) == project_type_filter]
+
+    if province_filter != "All":
+        filtered_df = filtered_df[filtered_df['Province'].astype(str) == province_filter]
+
+    if district_filter != "All":
+        filtered_df = filtered_df[
+            filtered_df['District - Duty Station'].astype(str) == district_filter
+        ]
+
+    # Filter by Active Projects (multi-select)
+    if active_project_filter:
+        # Keep only rows where ANY of the selected projects = True
+        mask = filtered_df[active_project_filter].any(axis=1)
+        filtered_df = filtered_df[mask]
+
+    # =====================================================
+    #         MAIN KPIs (DYNAMIC BASED ON FILTER)
+    # =====================================================
+    total_active = len(filtered_df)
+    total_resigned = len(resigned_df)  # stays global unless you want filter here also
+
     today = pd.to_datetime(datetime.today())
-    active_df['Contract_End_Date'] = pd.to_datetime(active_df['Contract_End_Date'], errors='coerce')
-    contracts_expiring = active_df[(active_df['Contract_End_Date'] - today).dt.days.between(0, 30)].shape[0]
+    filtered_df['Contract_End_Date'] = pd.to_datetime(filtered_df['Contract_End_Date'], errors='coerce')
+
+    contracts_expiring = filtered_df[
+        (filtered_df['Contract_End_Date'] - today).dt.days.between(0, 30)
+    ].shape[0]
 
     k1, k2, k3 = st.columns(3)
-    k1.metric("👥 Active Staff", total_active)
+    k1.metric("👥 Active Staff (Filtered)", total_active)
     k2.metric("📤 Resigned Staff", total_resigned)
-    k3.metric("⚠️ Expiring in 30 Days", contracts_expiring)
+    k3.metric("⚠️ Expiring in 30 Days (Filtered)", contracts_expiring)
 
     st.markdown("---")
-     # ───── Contracts Expiring Soon ─────
+
+    # =====================================================
+    #         CONTRACT EXPIRY ALERTS (FILTERED)
+    # =====================================================
     st.subheader("📅 Contract Expiry Alerts")
 
-    upcoming = active_df.copy()
-    upcoming = upcoming.dropna(subset=['Contract_End_Date'])
+    upcoming = filtered_df.dropna(subset=['Contract_End_Date'])
     upcoming['Contract_End_Date'] = pd.to_datetime(upcoming['Contract_End_Date'], errors='coerce')
 
-    # Today's date
-    today = pd.to_datetime(datetime.today())
+    expiring_soon = upcoming[(upcoming['Contract_End_Date'] - today).dt.days.between(0, 30)]
+    already_expired = upcoming[upcoming['Contract_End_Date'] < today]
 
-    # Split into two categories
-    expiring_soon = upcoming[
-        (upcoming['Contract_End_Date'] - today).dt.days.between(0, 30)
-    ]
-
-    already_expired = upcoming[
-        (upcoming['Contract_End_Date'] < today)
-    ]
-
-    # ⚠️ Expiring Soon
     if not expiring_soon.empty:
-        st.warning("⚠️ The following staff have contracts ending in the next 30 days:")
+        st.warning("⚠️ Contracts ending in the next 30 days (Filtered):")
         df = expiring_soon[['Full_Name', 'CNIC_No', 'Contract_End_Date']].copy()
         df['Contract_End_Date'] = df['Contract_End_Date'].dt.strftime('%Y-%m-%d')
         st.dataframe(df, use_container_width=True)
-
     else:
         st.success("✅ No contracts expiring in the next 30 days.")
 
-    # ❌ Already Expired
     if not already_expired.empty:
-        st.error("❌ The following staff have contracts that have already expired:")
+        st.error("❌ Already expired contracts (Filtered):")
         st.dataframe(already_expired[['Full_Name', 'CNIC_No', 'Contract_End_Date']], use_container_width=True)
-    st.markdown("---")
 
-    # ───── Pie Charts ─────
+    st.markdown("---")
+        # =====================================================
+    #      🔧 BULK UPDATE CONTRACT EXPIRY DATES (NEW)
+    # =====================================================
+
+    st.subheader("🛠️ Bulk Update Contract Expiry Dates")
+
+    # Only use filtered_df or active_df depending on your dashboard style
+    expiry_df = active_df.copy()
+    expiry_df = expiry_df.dropna(subset=['Contract_End_Date'])
+    expiry_df['Contract_End_Date'] = pd.to_datetime(expiry_df['Contract_End_Date'], errors='coerce')
+
+    # Show only expired or expiring staff
+    to_update_df = expiry_df[
+        ((expiry_df['Contract_End_Date'] < today) |
+        (expiry_df['Contract_End_Date'] - today).dt.days.between(0, 30))
+    ].copy()
+
+    if to_update_df.empty:
+        st.success("🎉 All contracts are up to date!")
+    else:
+        st.warning(f"⚠️ {len(to_update_df)} contracts can be updated.")
+
+        # Select employees
+        st.write("### Select staff to update")
+
+        # Checkbox to select all
+        select_all = st.checkbox("Select All Staff")
+
+        if select_all:
+            selected_cnic_list = to_update_df['CNIC_No'].astype(str).tolist()
+        else:
+            selected_cnic_list = st.multiselect(
+                "Select Staff (by CNIC)",
+                to_update_df['CNIC_No'].astype(str).tolist(),
+                format_func=lambda x: to_update_df[to_update_df['CNIC_No'].astype(str)==x]['Full_Name'].iloc[0]
+            )
+
+        st.write("### New Contract End Date")
+        new_date = st.date_input("Choose New Contract End Date")
+
+        if st.button("Update Contract Dates"):
+            if not selected_cnic_list:
+                st.error("Please select at least one staff member.")
+            else:
+                # Update contract end dates
+                for cnic in selected_cnic_list:
+                    idx = active_df[active_df['CNIC_No'].astype(str) == cnic].index
+                    if not idx.empty:
+                        active_df.at[idx[0], 'Contract_End_Date'] = new_date
+
+                save_data(active_df, resigned_df)
+
+                st.success(f"🎉 Updated contract end dates for {len(selected_cnic_list)} staff!")
+                st.rerun()
+
+    # =====================================================
+    #               PIE CHARTS (FILTERED)
+    # =====================================================
     col1, col2 = st.columns(2)
+
     with col1:
-        st.subheader("📍 Province Distribution")
-        counts = active_df['Province'].value_counts()
-        labels = [f"{k} ({v})" for k, v in counts.items()]
-        fig, ax = plt.subplots(figsize=(6, 6))
-        ax.pie(counts, labels=labels, autopct='%1.1f%%', startangle=140, textprops={'fontsize': 10})
-        ax.axis('equal')
-        st.pyplot(fig)
-        plt.close()
+        st.subheader("📍 Province Distribution (Filtered)")
+        if not filtered_df.empty:
+            counts = filtered_df['Province'].value_counts()
+            labels = [f"{k} ({v})" for k, v in counts.items()]
+            fig, ax = plt.subplots(figsize=(6, 6))
+            ax.pie(counts, labels=labels, autopct='%1.1f%%', startangle=140)
+            ax.axis('equal')
+            st.pyplot(fig)
+            plt.close()
+        else:
+            st.info("No data available for this filter.")
 
     with col2:
-        st.subheader("⚧️ Gender Distribution")
-        counts = active_df['Gender'].value_counts()
-        labels = [f"{k} ({v})" for k, v in counts.items()]
-        fig, ax = plt.subplots(figsize=(6, 6))
-        ax.pie(counts, labels=labels, autopct='%1.1f%%', startangle=140, textprops={'fontsize': 10})
-        ax.axis('equal')
-        st.pyplot(fig)
-        plt.close()
+        st.subheader("⚧️ Gender Distribution (Filtered)")
+        if not filtered_df.empty:
+            counts = filtered_df['Gender'].value_counts()
+            labels = [f"{k} ({v})" for k, v in counts.items()]
+            fig, ax = plt.subplots(figsize=(6, 6))
+            ax.pie(counts, labels=labels, autopct='%1.1f%%', startangle=140)
+            ax.axis('equal')
+            st.pyplot(fig)
+            plt.close()
+        else:
+            st.info("No data available for this filter.")
 
     st.markdown("---")
 
-    # ───── Project Participation ─────
-    st.subheader("📌 Project Participation")
-    project_counts = {proj: active_df[proj].sum() for proj in PROJECTS}
+    # =====================================================
+    #         PROJECT PARTICIPATION (FILTERED)
+    # =====================================================
+    st.subheader("📌 Project Participation (Filtered)")
+
+    for proj in PROJECTS:
+        filtered_df[proj] = filtered_df[proj].astype(bool)
+
+    project_counts = {
+        proj: filtered_df[proj].sum()
+        for proj in PROJECTS
+    }
+
     fig, ax = plt.subplots(figsize=(10, 4))
     sns.barplot(x=list(project_counts.keys()), y=list(project_counts.values()), palette="Set2", ax=ax)
     ax.set_ylabel("Staff Count")
     ax.set_xlabel("Project")
-    ax.set_title("Active Staff by Project")
+    ax.set_title("Active Staff by Project (Filtered)")
     ax.grid(axis='y', linestyle='--', alpha=0.6)
+
     for container in ax.containers:
         ax.bar_label(container, label_type='edge', padding=3, fontsize=9)
+
     plt.xticks(rotation=30, ha='right')
     st.pyplot(fig)
     plt.close()
-
-    st.markdown("---")     
 
 elif menu == "👥 View Profiles":
     if "view_cnic" in st.session_state and st.session_state.view_cnic:
