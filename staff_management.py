@@ -19,7 +19,8 @@ PROJECTS = [
     "CVA",
     "FCDO",
     "MIS",
-    "Call Center"
+    "Call Center",
+    "Provincial Coordinator"
 ]
 
 
@@ -101,8 +102,7 @@ active_df, resigned_df = load_data()
 
 
 
-# ---------- PAGE CONFIG ----------
-st.set_page_config(page_title="HR Dashboard", layout="wide")
+
 
 # ---------- MENU ----------
 # Initialize selected tab in session state
@@ -912,6 +912,23 @@ elif menu == "📥 Download Data":
     with pd.ExcelWriter(resigned_buffer, engine='xlsxwriter') as writer:
         resigned_df.to_excel(writer, index=False, sheet_name=RESIGNED_SHEET)
     st.download_button("📄 Download Inactive Staff Excel", data=resigned_buffer.getvalue(), file_name="inactive_staff.xlsx")
+        # ==========================================================
+    #        📦 DOWNLOAD COMPLETE STAFF_DATA.XLSX WORKBOOK
+    # ==========================================================
+    st.subheader("📦 Download Full staff_data.xlsx (Active + Inactive)")
+
+    full_buffer = io.BytesIO()
+    with pd.ExcelWriter(full_buffer, engine="openpyxl") as writer:
+        active_df.to_excel(writer, sheet_name=ACTIVE_SHEET, index=False)
+        resigned_df.to_excel(writer, sheet_name=RESIGNED_SHEET, index=False)
+
+    st.download_button(
+        "📥 Download Full staff_data.xlsx",
+        data=full_buffer.getvalue(),
+        file_name="staff_data.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+
 # ---------- INACTIVE STAFF ----------
 elif menu == "🚫 Inactive Staff":
     st.header("🚫 Inactive / Resigned Staff")
